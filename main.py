@@ -4,6 +4,7 @@ import csv
 import mimetypes
 import struct
 import re
+import unicodedata
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -98,10 +99,40 @@ def generate_tts(input_csv, output_dir):
 
         sentence = raw_sentence
 
+        # 1. Strip leading and trailing whitespaces
         trimmed = sentence.strip()
-        alphanumeric_only = re.sub(r"[^a-zA-Z0-9 ]", "", trimmed)
+        
+        # 2. Remove punctuation that should always be directly deleted (e.g. !, ?, \", ', (), /)
+        removed_punctuation = re.sub(r"[!?\"'()\/]", "", trimmed)
+        
+        # 3. Remove sentence-ending period if preceded by a full word (at least 2 alphanumeric chars)
+        no_sentence_dot = re.sub(r"(?<=[a-zA-Z0-9]{2})\.$", "", removed_punctuation)
+        
+        # 4. Replace periods, em-dashes (—), and hyphens (-) with spaces
+        replaced_separators = re.sub(r"[.—-]", " ", no_sentence_dot)
+        
+        # 5. Replace all whitespace characters with standard spaces and merge consecutive spaces
+        normalized_spaces = re.sub(r"\s+", " ", replaced_separators)
+        
+        # 6. Normalize accented/diacritic characters (e.g. café -> cafe)
+        normalized_chars = (
+            unicodedata.normalize("NFKD", normalized_spaces)
+            .encode("ascii", "ignore")
+            .decode("utf-8")
+        )
+        
+        # 7. Remove characters that are not alphanumeric, space, or underscore (e.g. commas, but keep original underscores)
+        alphanumeric_only = re.sub(r"[^a-zA-Z0-9_ ]", "", normalized_chars)
+        
+        # 8. Replace spaces with underscores
         underscored = alphanumeric_only.replace(" ", "_")
-        safe_filename = underscored.lower()
+        
+        # 9. Merge consecutive underscores into a single underscore
+        merged_underscores = re.sub(r"_+", "_", underscored)
+        
+        # 10. Convert to lowercase
+        safe_filename = merged_underscores.lower()
+        
         file_name = os.path.join(output_dir, f"{safe_filename}.wav")
 
         if os.path.exists(file_name):

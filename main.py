@@ -99,39 +99,36 @@ def generate_tts(input_csv, output_dir):
 
         sentence = raw_sentence
 
-        # 1. Strip leading and trailing whitespaces
+        # Filename rules aligned with english-vocab-en / english-vocab-zh skills
+        # (column F: Example Audio). Order matters.
+
+        # 1. Trim leading/trailing whitespace
         trimmed = sentence.strip()
-        
-        # 2. Remove punctuation that should always be directly deleted (e.g. !, ?, \", ', (), /)
-        removed_punctuation = re.sub(r"[!?\"'()\/]", "", trimmed)
-        
-        # 3. Remove sentence-ending period if preceded by a full word (at least 2 alphanumeric chars)
-        no_sentence_dot = re.sub(r"(?<=[a-zA-Z0-9]{2})\.$", "", removed_punctuation)
-        
-        # 4. Replace periods and em-dashes (—) with spaces (hyphens preserved)
-        replaced_separators = re.sub(r"[.—]", " ", no_sentence_dot)
-        
-        # 5. Replace all whitespace characters with standard spaces and merge consecutive spaces
-        normalized_spaces = re.sub(r"\s+", " ", replaced_separators)
-        
-        # 6. Normalize accented/diacritic characters (e.g. café -> cafe)
+
+        # 2. Replace periods and em-dashes with a space
+        #    (internal abbreviations a.m. → a m, sentence-final . → trailing space cleaned in step 5)
+        periods_to_spaces = re.sub(r"[.—]", " ", trimmed)
+
+        # 3. Normalize accented/diacritic characters (e.g. café → cafe)
         normalized_chars = (
-            unicodedata.normalize("NFKD", normalized_spaces)
+            unicodedata.normalize("NFKD", periods_to_spaces)
             .encode("ascii", "ignore")
             .decode("utf-8")
         )
-        
-        # 7. Remove characters that are not alphanumeric, space, underscore, or hyphen (e.g. commas, but keep original underscores and hyphens)
-        alphanumeric_only = re.sub(r"[^a-zA-Z0-9_\- ]", "", normalized_chars)
-        
-        # 8. Replace spaces with underscores
-        underscored = alphanumeric_only.replace(" ", "_")
-        
-        # 9. Merge consecutive underscores into a single underscore
-        merged_underscores = re.sub(r"_+", "_", underscored)
-        
-        # 10. Convert to lowercase
-        safe_filename = merged_underscores.lower()
+
+        # 4. Keep only alphanumeric, space, or hyphen
+        #    (apostrophes, slashes, parentheses, commas, quotes all removed: don't → dont)
+        alphanumeric_only = re.sub(r"[^a-zA-Z0-9\- ]", "", normalized_chars)
+
+        # 5. Collapse repeated whitespace into a single space AND trim
+        #    (cleans up trailing space left by step 2: "a m " → "a m")
+        compressed = re.sub(r"\s+", " ", alphanumeric_only).strip()
+
+        # 6. Spaces → underscores
+        underscored = compressed.replace(" ", "_")
+
+        # 7. Lowercase
+        safe_filename = underscored.lower()
         
         file_name = os.path.join(output_dir, f"{safe_filename}.wav")
 

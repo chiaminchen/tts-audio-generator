@@ -108,8 +108,8 @@ def generate_tts(input_csv, output_dir):
         # 3. Remove sentence-ending period if preceded by a full word (at least 2 alphanumeric chars)
         no_sentence_dot = re.sub(r"(?<=[a-zA-Z0-9]{2})\.$", "", removed_punctuation)
         
-        # 4. Replace periods, em-dashes (—), and hyphens (-) with spaces
-        replaced_separators = re.sub(r"[.—-]", " ", no_sentence_dot)
+        # 4. Replace periods and em-dashes (—) with spaces (hyphens preserved)
+        replaced_separators = re.sub(r"[.—]", " ", no_sentence_dot)
         
         # 5. Replace all whitespace characters with standard spaces and merge consecutive spaces
         normalized_spaces = re.sub(r"\s+", " ", replaced_separators)
@@ -121,8 +121,8 @@ def generate_tts(input_csv, output_dir):
             .decode("utf-8")
         )
         
-        # 7. Remove characters that are not alphanumeric, space, or underscore (e.g. commas, but keep original underscores)
-        alphanumeric_only = re.sub(r"[^a-zA-Z0-9_ ]", "", normalized_chars)
+        # 7. Remove characters that are not alphanumeric, space, underscore, or hyphen (e.g. commas, but keep original underscores and hyphens)
+        alphanumeric_only = re.sub(r"[^a-zA-Z0-9_\- ]", "", normalized_chars)
         
         # 8. Replace spaces with underscores
         underscored = alphanumeric_only.replace(" ", "_")

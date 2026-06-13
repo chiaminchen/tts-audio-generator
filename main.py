@@ -71,6 +71,41 @@ def save_binary_file(file_name, data):
     print(f"Saved: {file_name}")
 
 
+# Curly apostrophe variants users sometimes paste in from word processors / TSV exports.
+_APOSTROPHES = "'‘’ʼ"
+
+
+def normalize_filename(text: str) -> str:
+    """Convert a TTS source line into a filename per english-vocab-en/zh
+    and merge-vocab-en/zh skill rules (column B / column F processing).
+
+    The skill-produced CSV has already stripped parentheses, `sb`/`sth`
+    placeholders, and alternation slashes, so this only needs the final
+    text → filename step:
+
+    1. Trim whitespace.
+    2. Replace periods `.`, apostrophes `'` (incl. curly `'`, `'`, modifier `ʼ`),
+       and slashes `/` with a space — keeps abbreviations and contractions
+       distinct from same-spelling words (`a.m.` ≠ `am`, `we're` ≠ `were`,
+       `let's` ≠ `lets`, `o'clock` ≠ `oclock`, `Feb.` ≠ `feb`).
+    3. NFKD-fold diacritics to ASCII (`café` → `cafe`) as a defensive fallback.
+    4. Drop every remaining character that isn't [A-Za-z0-9], space, or `-`
+       (digits and hyphens are preserved: `MP3 player`, `state-of-the-art`).
+    5. Collapse whitespace runs to one space and trim.
+    6. Spaces → underscores, then lowercase.
+    """
+    trimmed = text.strip()
+    space_swapped = re.sub(rf"[.{_APOSTROPHES}/]", " ", trimmed)
+    ascii_folded = (
+        unicodedata.normalize("NFKD", space_swapped)
+        .encode("ascii", "ignore")
+        .decode("utf-8")
+    )
+    alphanumeric_only = re.sub(r"[^a-zA-Z0-9\- ]", "", ascii_folded)
+    compressed = re.sub(r"\s+", " ", alphanumeric_only).strip()
+    return compressed.replace(" ", "_").lower()
+
+
 def generate_tts(input_csv, output_dir):
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
@@ -98,38 +133,11 @@ def generate_tts(input_csv, output_dir):
             continue
 
         sentence = raw_sentence
+        safe_filename = normalize_filename(sentence)
+        if not safe_filename:
+            print(f"Skipping line that normalizes to empty: {sentence!r}")
+            continue
 
-        # Filename rules aligned with english-vocab-en / english-vocab-zh skills
-        # (column F: Example Audio). Order matters.
-
-        # 1. Trim leading/trailing whitespace
-        trimmed = sentence.strip()
-
-        # 2. Replace periods and em-dashes with a space
-        #    (internal abbreviations a.m. → a m, sentence-final . → trailing space cleaned in step 5)
-        periods_to_spaces = re.sub(r"[.—]", " ", trimmed)
-
-        # 3. Normalize accented/diacritic characters (e.g. café → cafe)
-        normalized_chars = (
-            unicodedata.normalize("NFKD", periods_to_spaces)
-            .encode("ascii", "ignore")
-            .decode("utf-8")
-        )
-
-        # 4. Keep only alphanumeric, space, or hyphen
-        #    (apostrophes, slashes, parentheses, commas, quotes all removed: don't → dont)
-        alphanumeric_only = re.sub(r"[^a-zA-Z0-9\- ]", "", normalized_chars)
-
-        # 5. Collapse repeated whitespace into a single space AND trim
-        #    (cleans up trailing space left by step 2: "a m " → "a m")
-        compressed = re.sub(r"\s+", " ", alphanumeric_only).strip()
-
-        # 6. Spaces → underscores
-        underscored = compressed.replace(" ", "_")
-
-        # 7. Lowercase
-        safe_filename = underscored.lower()
-        
         file_name = os.path.join(output_dir, f"{safe_filename}.wav")
 
         if os.path.exists(file_name):
